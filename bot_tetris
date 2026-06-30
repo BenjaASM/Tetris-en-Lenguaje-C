@@ -1,0 +1,225 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <time.h>
+
+#define FILAS 20
+#define COLUMNAS 10
+#define MAX_NODOS 150 // Nodo raíz + Posibles jugadas de Pieza 1 y Pieza 2
+
+// Estructura para representar una jugada (Estado)
+typedef struct {
+    int columna;
+    int rotacion;
+    char tipo_pieza;
+} Jugada;
+
+// Variables Globales
+int tablero[FILAS][COLUMNAS] = {0};
+int adj[MAX_NODOS][MAX_NODOS] = {0}; // Matriz de Adyacencia
+Jugada info_nodos[MAX_NODOS];
+int total_nodos = 0;
+int nodos_visitados = 0;
+int mejor_score = -999999;
+
+// Inicializa el tablero simulando una partida en curso con el "pozo" libre
+void inicializar_tablero() {
+    memset(tablero, 0, sizeof(tablero));
+    // Llenamos algunas filas inferiores pero dejamos la columna 9 (el pozo) vacía
+    for (int r = 15; r < FILAS; r++) {
+        for (int c = 0; c < COLUMNAS - 1; c++) {
+            if ((r + c) % 2 == 0) tablero[r][c] = 1; 
+        }
+    }
+}
+
+// Heurística: Evalúa el tablero priorizando la "Técnica del Pozo"
+int evaluar_tablero() {
+    int score = 0;
+    int huecos = 0;
+    int altura_maxima = 0;
+    int lineas_completadas = 0;
+    int bloques_en_pozo = 0;
+
+    // 1. Contar líneas completadas y revisar el pozo (columna 9)
+    for (int r = 0; r < FILAS; r++) {
+        int c_llenas = 0;
+        for (int c = 0; c < COLUMNAS; c++) {
+            if (tablero[r][c] != 0) {
+                c_llenas++;
+                if (c == 9) bloques_en_pozo++; // Bloque en el pozo
+            }
+        }
+        if (c_llenas == COLUMNAS) lineas_completadas++;
+    }
+
+    // 2. Contar huecos y altura
+    for (int c = 0; c < COLUMNAS; c++) {
+        int col_alt = 0;
+        int encontro_bloque = 0;
+        for (int r = 0; r < FILAS; r++) {
+            if (tablero[r][c] != 0) {
+                if (!encontro_bloque) {
+                    col_alt = FILAS - r;
+                    encontro_bloque = 1;
+                    if (col_alt > altura_maxima) altura_maxima = col_alt;
+                }
+            } else if (encontro_bloque) {
+                huecos++; // Espacio vacío debajo de un bloque
+            }
+        }
+    }
+
+    // Cálculo del Score
+    score -= (altura_maxima * 12);
+    score -= (huecos * 35);
+    
+    // Si hace Tetris (4 líneas), recompensa masiva
+    if (lineas_completadas == 4) {
+        score += 10000;
+    } else {
+        score += (lineas_completadas * 100);
+    }
+
+    // TÉCNICA DEL POZO: Penalización masiva si se obstruye la última columna
+    // A menos que esa obstrucción resulte en un Tetris inmediato.
+    if (bloques_en_pozo > 0 && lineas_completadas < 4) {
+        score -= (bloques_en_pozo * 500); 
+    } else if (bloques_en_pozo == 0) {
+        score += 300; // Premio por mantener el pozo limpio
+    }
+
+    return score;
+}
+
+// Simula colocar una pieza (Retorna las líneas limpiadas para efectos de score)
+int simular_colocacion(int col, char tipo) {
+    int r_destino = FILAS - 1;
+    int ancho = (tipo == 'O') ? 2 : ((tipo == 'I') ? 1 : 3);
+    int alto = (tipo == 'I') ? 4 : 2;
+
+    if (col + ancho > COLUMNAS) return 0; // Fuera de rango
+
+    // Encontrar la fila más alta disponible en ese rango de columnas
+    for (int r = 0; r < FILAS; r++) {
+        for (int c = col; c < col + ancho; c++) {
+            if (tablero[r][c] != 0) {
+                if (r - 1 < r_destino) r_destino = r - 1;
+            }
+        }
+    }
+
+    // Colocar la pieza de forma sólida simplificada
+    for (int r = r_destino; r > r_destino - alto && r >= 0; r--) {
+        for (int c = col; c < col + ancho; c++) {
+            tablero[r][c] = 2; // 2 significa pieza recién colocada
+        }
+    }
+    return 1;
+}
+
+// Construye la Matriz de Adyacencia para representar las decisiones consecutivas
+void construir_grafo_decisiones(char p1, char p2) {
+    memset(adj, 0, sizeof(adj));
+    total_nodos = 1; // Nodo 0 es la raíz (estado actual)
+    
+    // Generar nodos para la Pieza 1 (Nivel 1 del árbol)
+    int inicio_p1 = total_nodos;
+    int cols_p1 = (p1 == 'I') ? 10 : ((p1 == 'O') ? 9 : 8);
+    for (int c = 0; c < cols_p1; c++) {
+        info_nodos[total_nodos].columna = c;
+        info_nodos[total_nodos].tipo_pieza = p1;
+        adj[0][total_nodos] = 1; // Conectar raíz con jugadas de pieza 1
+        total_nodos++;
+    }
+    int fin_p1 = total_nodos;
+
+    // Generar nodos para la Pieza 2 (Nivel 2 del árbol) y conectar mediante adyacencia
+    int cols_p2 = (p2 == 'I') ? 10 : ((p2 == 'O') ? 9 : 8);
+    for (int i = inicio_p1; i < fin_p1; i++) {
+        for (int c = 0; c < cols_p2; c++) {
+            if (total_nodos < MAX_NODOS) {
+                info_nodos[total_nodos].columna = c;
+                info_nodos[total_nodos].tipo_pieza = p2;
+                adj[i][total_nodos] = 1; // Conectar opción de P1 con opción de P2
+                total_nodos++;
+            }
+        }
+    }
+}
+
+// DFS con Recursividad y Backtracking usando la Matriz de Adyacencia
+void dfs(int nodo_actual, int profundidad) {
+    nodos_visitados++;
+
+    // Clonar el estado del tablero para poder hacer Backtracking de manera segura
+    int copia_tablero[FILAS][COLUMNAS];
+    memcpy(copia_tablero, tablero, sizeof(tablero));
+
+    // Si no es la raíz, ejecutamos el movimiento en el tablero simulado
+    if (nodo_actual != 0) {
+        int exito = simular_colocacion(info_nodos[nodo_actual].columna, info_nodos[nodo_actual].tipo_pieza);
+        if (!exito) {
+            // Movimiento inválido, restauramos y podamos la rama
+            memcpy(tablero, copia_tablero, sizeof(copia_tablero));
+            return;
+        }
+    }
+
+    // Condición de parada (Llegamos al final del lookahead de 2 piezas)
+    if (profundidad == 2) {
+        int score_actual = evaluar_tablero();
+        if (score_actual > mejor_score) {
+            mejor_score = score_actual;
+        }
+        // BACKTRACKING: Restauramos el tablero antes de volver en la recursión
+        memcpy(tablero, copia_tablero, sizeof(copia_tablero));
+        return;
+    }
+
+    // Explorar los nodos vecinos usando la Matriz de Adyacencia
+    for (int vecino = 0; vecino < total_nodos; vecino++) {
+        if (adj[nodo_actual][vecino] == 1) {
+            dfs(vecino, profundidad + 1);
+        }
+    }
+
+    // BACKTRACKING: Restauramos el tablero al salir del nodo actual
+    memcpy(tablero, copia_tablero, sizeof(copia_tablero));
+}
+
+// Ejecuta la prueba para un par de piezas y mide el tiempo exacto
+void ejecutar_test_bot(char p1, char p2) {
+    inicializar_tablero();
+    construir_grafo_decisiones(p1, p2);
+    
+    nodos_visitados = 0;
+    mejor_score = -999999;
+
+    clock_t inicio = clock();
+    dfs(0, 0); // Comenzamos DFS desde la raíz (nodo 0) a profundidad 0
+    clock_t fin = clock();
+
+    double tiempo_ms = ((double)(fin - inicio) / CLOCKS_PER_SEC) * 1000.0;
+
+    printf("|  %c  -  %c      | %-16d | %-15.4f |%-13d|\n", p1, p2, nodos_visitados, tiempo_ms, mejor_score);
+}
+
+int main() {
+    printf(" ==================================================================\n");
+    printf("                              BOT TETRIS           \n");
+    printf(" ==================================================================\n");
+    printf("| Siguiente Par |  Nodos Visitados |   Tiempo (ms)   | Mejor Score |\n");
+    printf("|---------------|------------------|-----------------|-------------|\n");
+
+    // Pruebas con diferentes combinaciones de piezas
+    // La pieza 'I' busca el pozo, otras piezas lo evitan debido a la heurística
+    ejecutar_test_bot('T', 'I');
+    ejecutar_test_bot('O', 'O');
+    ejecutar_test_bot('I', 'I');
+    ejecutar_test_bot('O', 'T');
+    ejecutar_test_bot('I', 'O');
+    
+    printf(" ==================================================================\n");
+    return 0;
+}
