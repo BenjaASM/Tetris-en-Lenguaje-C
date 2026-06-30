@@ -1,0 +1,92 @@
+#include <stdio.h>
+#include <stdbool.h>
+#include <time.h> // Necesario para el Análisis Estadístico (Requisito 4)
+
+#define FILAS 20
+#define COLUMNAS 10
+
+// Representación del tablero como Matriz (Estructura I y II)
+int tablero[FILAS][COLUMNAS] = {0};
+long nodosVisitados = 0; // Para demostrar la complejidad Big O en la práctica
+
+typedef struct {
+    int ancho;
+    int alto;
+    char nombre[10];
+} Pieza;
+
+// Función para verificar colisiones y límites (El "Guardián" del Grafo)
+bool esMovimientoValido(int fila, int col, Pieza p) {
+    if (col + p.ancho > COLUMNAS || fila + p.alto > FILAS || col < 0) return false;
+    return true; // En una IA real, aquí se verificaría si tablero[fila][col] == 1
+}
+
+// DFS con Backtracking para buscar la profundidad máxima (Conceptos Transversales)
+void buscarMejorPosicionDFS(int fila, int col, Pieza p, int* maxFila) {
+    nodosVisitados++; // Cada llamada es un nodo explorado en el grafo de decisiones
+
+    // Caso Base: Si el siguiente movimiento hacia abajo no es válido, llegamos al fondo
+    if (!esMovimientoValido(fila + 1, col, p)) {
+        if (fila > *maxFila) {
+            *maxFila = fila; 
+        }
+        return;
+    }
+
+    // Recursividad: Exploramos la "arista" del grafo que apunta hacia abajo
+    buscarMejorPosicionDFS(fila + 1, col, p, maxFila);
+    
+    // El Backtracking ocurre implícitamente al retornar de la función para probar la siguiente columna
+}
+
+void ejecutarSimulacionLogistica() {
+    // Definimos las piezas como "mercancía" de diferentes dimensiones
+    Pieza piezas[] = {
+        {2, 1, "Bloque L"}, 
+        {1, 4, "Pieza I"}, 
+        {2, 2, "Cubo O"}, 
+        {3, 1, "Pieza T"}
+    };
+    int totalPiezas = 4;
+
+    printf("============================================================\n");
+    printf("   INFORME DE RENDIMIENTO IA: OPTIMIZACION LOGISTICA\n");
+    printf("============================================================\n");
+    printf("| Pieza        | Nodos (V) | Tiempo (ms) | Profundidad |\n");
+    printf("|--------------|-----------|-------------|-------------|\n");
+
+    for (int i = 0; i < totalPiezas; i++) {
+        nodosVisitados = 0;
+        int mejorFilaGlobal = -1;
+        
+        // Iniciamos el reloj para el Análisis Estadístico y Teórico [1]
+        clock_t inicio = clock(); 
+
+        // La IA analiza cada columna (Exploración del Grafo)
+        for (int c = 0; c < COLUMNAS; c++) {
+            
+            // ESTRATEGIA LOGÍSTICA: Reservar la columna 10 para la pieza larga (I)
+            // Si no es la pieza larga y es la última columna, la ignoramos.
+            if (c == 9 && piezas[i].ancho != 1) continue; 
+
+            int maxFilaEnColumna = 0;
+            buscarMejorPosicionDFS(0, c, piezas[i], &maxFilaEnColumna);
+            
+            if (maxFilaEnColumna > mejorFilaGlobal) {
+                mejorFilaGlobal = maxFilaEnColumna;
+            }
+        }
+
+        clock_t fin = clock();
+        double tiempo_ms = ((double)(fin - inicio) / CLOCKS_PER_SEC) * 1000.0;
+
+        printf("| %-12s | %9ld | %11.4f | %11d |\n", 
+               piezas[i].nombre, nodosVisitados, tiempo_ms, mejorFilaGlobal);
+    }
+    printf("============================================================\n");
+}
+
+int main() {
+    ejecutarSimulacionLogistica();
+    return 0;
+}
